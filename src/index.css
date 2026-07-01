@@ -1,0 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #051424; /* surface */
+    background-image: radial-gradient(circle at 50% -20%, rgba(123, 208, 255, 0.15) 0%, transparent 60%);
+    background-attachment: fixed;
+    min-height: max(884px, 100dvh);
+  }
+}
+
+@layer components {
+  .glass-card {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .glow-effect {
+    box-shadow: 0 0 40px -10px rgba(123, 208, 255, 0.2);
+  }
+}
