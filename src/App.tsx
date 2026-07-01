@@ -4,18 +4,32 @@ import './App.css';
 const GEOCODING_API = 'https://geocoding-api.open-meteo.com/v1/search';
 const WEATHER_API = 'https://api.open-meteo.com/v1/forecast';
 
+interface HourlyData {
+  time: string[];
+  temperature_2m: number[];
+}
+
+interface DailyData {
+  time: string[];
+  weather_code: number[];
+  temperature_2m_max: number[];
+  temperature_2m_min: number[];
+  precipitation_probability_max: number[];
+}
+
 interface WeatherData {
   city: string;
   country: string;
   temp: number;
-  high: number;
-  low: number;
   description: string;
   windSpeed: number;
   humidity: number;
   precipitation: number;
   code: number;
   isDay: number;
+  time: string;
+  hourly: HourlyData;
+  daily: DailyData;
 }
 
 function App() {
@@ -23,9 +37,10 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [activeTab, setActiveTab] = useState('Temperature');
 
   useEffect(() => {
-    fetchWeather('San Francisco');
+    fetchWeather('Bengaluru');
   }, []);
 
   const fetchWeather = async (query: string) => {
@@ -39,7 +54,7 @@ function App() {
       const geoData = await geoRes.json();
       
       if (!geoData.results || geoData.results.length === 0) {
-        setError('City not found. Please try another search.');
+        setError('City not found.');
         setLoading(false);
         return;
       }
@@ -47,24 +62,24 @@ function App() {
       const location = geoData.results[0];
       
       const weatherRes = await fetch(
-        `${WEATHER_API}?latitude=${location.latitude}&longitude=${location.longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=auto`
+        `${WEATHER_API}?latitude=${location.latitude}&longitude=${location.longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto`
       );
       const weatherData = await weatherRes.json();
       const current = weatherData.current;
-      const daily = weatherData.daily;
       
       setWeather({
         city: location.name,
         country: location.country || '',
         temp: Math.round(current.temperature_2m),
-        high: daily?.temperature_2m_max ? Math.round(daily.temperature_2m_max[0]) : 0,
-        low: daily?.temperature_2m_min ? Math.round(daily.temperature_2m_min[0]) : 0,
         description: getWeatherDescription(current.weather_code),
         windSpeed: current.wind_speed_10m,
         humidity: current.relative_humidity_2m,
         precipitation: current.precipitation,
         code: current.weather_code,
-        isDay: current.is_day
+        isDay: current.is_day,
+        time: current.time,
+        hourly: weatherData.hourly,
+        daily: weatherData.daily
       });
       
     } catch (err) {
@@ -80,7 +95,7 @@ function App() {
     fetchWeather(search);
   };
 
-  const getWeatherIcon = (code: number, isDay: number) => {
+  const getWeatherIcon = (code: number, isDay: number = 1) => {
     if (code === 0) return isDay ? 'clear_day' : 'clear_night';
     if (code >= 1 && code <= 3) return isDay ? 'partly_cloudy_day' : 'partly_cloudy_night';
     if (code >= 45 && code <= 48) return 'foggy';
@@ -94,146 +109,240 @@ function App() {
 
   const getWeatherDescription = (code: number) => {
     const codes: Record<number, string> = {
-      0: 'Clear sky',
-      1: 'Mainly clear',
-      2: 'Partly cloudy',
-      3: 'Overcast',
-      45: 'Fog',
-      48: 'Depositing rime fog',
-      51: 'Light drizzle',
-      53: 'Moderate drizzle',
-      55: 'Dense drizzle',
-      61: 'Slight rain',
-      63: 'Moderate rain',
-      65: 'Heavy rain',
-      71: 'Slight snow',
-      73: 'Moderate snow',
-      75: 'Heavy snow',
-      77: 'Snow grains',
-      80: 'Slight rain showers',
-      81: 'Moderate rain showers',
-      82: 'Violent rain showers',
-      85: 'Slight snow showers',
-      86: 'Heavy snow showers',
-      95: 'Thunderstorm',
-      96: 'Thunderstorm, slight hail',
-      99: 'Thunderstorm, heavy hail'
+      0: 'Clear', 1: 'Mostly clear', 2: 'Partly cloudy', 3: 'Cloudy',
+      45: 'Fog', 48: 'Fog', 51: 'Light drizzle', 53: 'Drizzle', 55: 'Heavy drizzle',
+      61: 'Light rain', 63: 'Rain', 65: 'Heavy rain',
+      71: 'Light snow', 73: 'Snow', 75: 'Heavy snow',
+      80: 'Rain showers', 81: 'Showers', 82: 'Heavy showers',
+      95: 'Thunderstorm'
     };
-    return codes[code] || 'Unknown weather';
+    return codes[code] || 'Cloudy';
   };
 
-  const formatDate = () => {
-    return new Date().toLocaleDateString('en-US', { 
-      weekday: 'long', month: 'long', day: 'numeric' 
+  const formatCurrentTime = (isoString: string) => {
+    const date = new Date(isoString);
+    return date.toLocaleTimeString('en-US', { weekday: 'long', hour: 'numeric', minute: '2-digit' });
+  };
+
+  // Helper for formatting daily forecast days
+  const formatDay = (isoString: string) => {
+    const date = new Date(isoString);
+    return date.toLocaleDateString('en-US', { weekday: 'short' });
+  };
+
+  // Build the chart data for the next 8 points (3-hour intervals approx to fit screen)
+  const renderChart = () => {
+    if (!weather) return null;
+    
+    // Find current hour index
+    const now = new Date();
+    
+    // Fallback: just take next 24 hours from current index (0 for simplicity in this demo)
+    // To be precise, let's take 8 points starting from current hour
+    let startIndex = 0;
+    const currentIso = weather.time.slice(0, 13); // "2023-10-25T14"
+    const foundIndex = weather.hourly.time.findIndex(t => t.startsWith(currentIso));
+    if (foundIndex !== -1) startIndex = foundIndex;
+
+    const pointsCount = 8;
+    const step = 3; // every 3 hours
+    
+    const chartData = [];
+    for(let i=0; i < pointsCount; i++) {
+      const idx = startIndex + (i * step);
+      if (idx < weather.hourly.time.length) {
+        const timeStr = weather.hourly.time[idx];
+        const date = new Date(timeStr);
+        let hourLabel = date.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true });
+        chartData.push({
+          temp: Math.round(weather.hourly.temperature_2m[idx]),
+          label: hourLabel
+        });
+      }
+    }
+
+    if (chartData.length === 0) return null;
+
+    const minTemp = Math.min(...chartData.map(d => d.temp)) - 2;
+    const maxTemp = Math.max(...chartData.map(d => d.temp)) + 2;
+    const range = maxTemp - minTemp;
+    
+    const svgWidth = 800;
+    const svgHeight = 100;
+    const xStep = svgWidth / (pointsCount - 1);
+
+    const getX = (index: number) => index * xStep;
+    const getY = (temp: number) => svgHeight - ((temp - minTemp) / range) * (svgHeight - 20) - 10;
+
+    let pathD = `M 0,${svgHeight} `;
+    chartData.forEach((d, i) => {
+      pathD += `L ${getX(i)},${getY(d.temp)} `;
     });
+    pathD += `L ${svgWidth},${svgHeight} Z`;
+
+    let lineD = '';
+    chartData.forEach((d, i) => {
+      if (i === 0) lineD += `M ${getX(i)},${getY(d.temp)} `;
+      else lineD += `L ${getX(i)},${getY(d.temp)} `;
+    });
+
+    return (
+      <div className="w-full overflow-x-auto overflow-y-hidden no-scrollbar py-4 border-b border-google-border">
+        <div className="min-w-[600px] relative h-32">
+          {/* Temperatures above graph */}
+          <div className="flex justify-between absolute top-0 w-full px-2 text-google-secondary text-sm font-medium">
+            {chartData.map((d, i) => (
+              <span key={i} style={{ left: `${(i / (pointsCount - 1)) * 100}%`, transform: 'translateX(-50%)', position: 'absolute' }}>
+                {d.temp}°
+              </span>
+            ))}
+          </div>
+
+          <div className="absolute top-6 left-0 w-full h-[100px]">
+             <svg width="100%" height="100%" preserveAspectRatio="none" viewBox={`0 0 ${svgWidth} ${svgHeight}`}>
+                <path d={pathD} fill="#fff8e1" />
+                <path d={lineD} fill="none" stroke="#fbbc04" strokeWidth="2" />
+                {chartData.map((d, i) => (
+                  <circle key={i} cx={getX(i)} cy={getY(d.temp)} r="3" fill="#ffffff" stroke="#fbbc04" strokeWidth="2" />
+                ))}
+             </svg>
+          </div>
+          
+          {/* Time labels below graph */}
+          <div className="flex justify-between absolute bottom-0 w-full px-2 text-google-secondary text-xs">
+            {chartData.map((d, i) => (
+              <span key={i} style={{ left: `${(i / (pointsCount - 1)) * 100}%`, transform: 'translateX(-50%)', position: 'absolute' }}>
+                {d.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
-    <div className="text-on-surface antialiased min-h-screen flex flex-col pt-16 pb-20 md:pb-0 md:pt-24 dark">
-      {/* TopAppBar */}
-      <header className="bg-surface/50 backdrop-blur-[40px] fixed top-0 w-full flex justify-between items-center px-container-padding h-16 z-50">
-        <div className="flex items-center gap-3">
-          <span className="material-symbols-outlined text-primary text-2xl hover:bg-white/10 transition-colors active:scale-95 duration-200 cursor-pointer rounded-full p-2" data-icon="cloud">cloud</span>
-          <span className="font-headline-lg-mobile text-headline-lg-mobile font-bold text-on-surface">Atmosphere</span>
-        </div>
-        <div className="flex-1 max-w-md mx-4 hidden md:block">
-          <form onSubmit={handleSearch} className="relative group">
-            <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" data-icon="search">search</span>
-            <input 
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-full py-2 pl-12 pr-4 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-white/20 focus:bg-white/10 transition-all font-body-md text-body-md" 
-              placeholder="Search City..." 
-              type="text"
-            />
-          </form>
-        </div>
-        <div className="md:hidden">
-          <span className="material-symbols-outlined text-primary text-2xl hover:bg-white/10 transition-colors active:scale-95 duration-200 cursor-pointer rounded-full p-2" data-icon="search">search</span>
-        </div>
-      </header>
-
-      {/* Main Content Canvas */}
-      <main className="flex-1 w-full max-w-4xl mx-auto px-container-padding flex flex-col gap-6 md:gap-8">
-        
-        {/* Mobile Search */}
-        <form onSubmit={handleSearch} className="md:hidden relative group w-full mt-4">
-          <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" data-icon="search">search</span>
+    <div className="min-h-screen bg-white text-google-text font-sans">
+      {/* Header Search */}
+      <header className="p-4 border-b border-google-border max-w-4xl mx-auto">
+        <form onSubmit={handleSearch} className="flex items-center">
           <input 
+            type="text" 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-white/5 border border-white/10 rounded-full py-3 pl-12 pr-4 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-white/20 focus:bg-white/10 transition-all font-body-md text-body-md" 
-            placeholder="Search City..." 
-            type="text"
+            placeholder="Search for a location..." 
+            className="flex-1 max-w-lg p-2.5 bg-[#f1f3f4] rounded-full focus:outline-none focus:ring-1 focus:ring-google-border focus:bg-white text-base px-6 shadow-sm"
           />
+          <button type="submit" className="ml-2 p-2 text-google-blue">
+            <span className="material-symbols-outlined">search</span>
+          </button>
         </form>
+      </header>
 
-        {error && (
-          <div className="bg-error-container/20 border border-error/50 text-error rounded-xl p-4 text-center mt-4 font-body-md">
-            {error}
-          </div>
-        )}
-
-        {loading && (
-          <div className="flex justify-center items-center h-64">
-            <span className="material-symbols-outlined text-4xl text-primary animate-spin">refresh</span>
-          </div>
-        )}
+      <main className="max-w-3xl mx-auto mt-6 px-4">
+        {loading && <p className="text-center text-google-secondary">Loading...</p>}
+        {error && <p className="text-center text-red-500">{error}</p>}
 
         {!loading && weather && (
-          <>
-            {/* Hero Section */}
-            <section className="glass-card rounded-3xl p-8 flex flex-col items-center justify-center relative overflow-hidden glow-effect mt-4 md:mt-8">
-              <div className="absolute inset-0 bg-gradient-to-br from-secondary/10 to-transparent pointer-events-none"></div>
-              
-              <div className="z-10 flex flex-col items-center text-center space-y-4">
-                <h1 className="font-headline-lg-mobile text-headline-lg-mobile md:font-headline-lg md:text-headline-lg text-on-surface flex items-center gap-2">
-                  <span className="material-symbols-outlined text-xl" data-icon="location_on">location_on</span>
-                  {weather.city}{weather.country ? `, ${weather.country}` : ''}
-                </h1>
-                <p className="font-body-md text-body-md text-on-surface-variant">{formatDate()}</p>
-                <p className="font-body-md text-secondary capitalize">{weather.description}</p>
-                
-                <div className="flex items-center justify-center gap-6 mt-6">
-                  <span 
-                    className="material-symbols-outlined text-6xl md:text-8xl text-secondary drop-shadow-[0_0_15px_rgba(123,208,255,0.5)]" 
-                    style={{ fontVariationSettings: "'FILL' 1" }}>
-                    {getWeatherIcon(weather.code, weather.isDay)}
-                  </span>
-                  <span className="font-display-xl text-display-xl text-on-surface tracking-tighter">
-                    {weather.temp}°
-                  </span>
-                </div>
-                
-                <div className="flex items-center gap-3 mt-4 bg-surface/40 rounded-full px-4 py-1.5 border border-white/5">
-                  <span className="font-data-mono text-data-mono text-secondary">H: {weather.high}°</span>
-                  <span className="w-1 h-1 rounded-full bg-on-surface-variant/30"></span>
-                  <span className="font-data-mono text-data-mono text-on-surface-variant">L: {weather.low}°</span>
-                </div>
-              </div>
-            </section>
+          <div className="bg-white rounded-lg border border-google-border shadow-sm p-6 overflow-hidden">
+            {/* Top Location row */}
+            <div className="flex items-center gap-2 mb-6">
+              <span className="material-symbols-outlined text-google-secondary text-xl">location_on</span>
+              <h1 className="text-xl font-medium">{weather.city}{weather.country ? `, ${weather.country}` : ''}</h1>
+            </div>
 
-            {/* Details Grid */}
-            <section className="grid grid-cols-3 gap-card-gap md:gap-6">
-              <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col items-center justify-center text-center space-y-2 hover:bg-white/10 transition-colors">
-                <span className="material-symbols-outlined text-secondary mb-1">air</span>
-                <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Wind</span>
-                <span className="font-data-mono text-data-mono text-on-surface text-lg">{weather.windSpeed} km/h</span>
+            {/* Current Weather Flex Container */}
+            <div className="flex flex-col md:flex-row justify-between mb-8">
+              {/* Left Side: Icon and Temp */}
+              <div className="flex items-center gap-4">
+                <span 
+                  className="material-symbols-outlined text-google-yellow text-6xl"
+                  style={{ fontVariationSettings: "'FILL' 1", fontSize: '64px' }}
+                >
+                  {getWeatherIcon(weather.code, weather.isDay)}
+                </span>
+                
+                <div className="flex items-start">
+                  <span className="text-6xl font-normal tracking-tighter">{weather.temp}</span>
+                  <div className="flex flex-col text-google-secondary mt-1 ml-1 text-sm font-medium">
+                    <div className="flex gap-1">
+                      <span className="text-black cursor-pointer">°C</span>
+                      <span>|</span>
+                      <span className="cursor-pointer hover:underline">°F</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Details Right next to Temp */}
+                <div className="ml-6 flex flex-col text-[13px] text-google-secondary leading-tight gap-1">
+                  <div>Precipitation: {weather.precipitation}%</div>
+                  <div>Humidity: {weather.humidity}%</div>
+                  <div>Wind: {weather.windSpeed} km/h</div>
+                </div>
               </div>
-              
-              <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col items-center justify-center text-center space-y-2 hover:bg-white/10 transition-colors">
-                <span className="material-symbols-outlined text-secondary mb-1">humidity_percentage</span>
-                <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Humidity</span>
-                <span className="font-data-mono text-data-mono text-on-surface text-lg">{weather.humidity}%</span>
+
+              {/* Right Side: Description and Time */}
+              <div className="mt-4 md:mt-0 text-right flex flex-col">
+                <div className="text-xl font-medium">{weather.description}</div>
+                <div className="text-sm text-google-secondary mt-1">{formatCurrentTime(weather.time)}</div>
               </div>
-              
-              <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col items-center justify-center text-center space-y-2 hover:bg-white/10 transition-colors">
-                <span className="material-symbols-outlined text-secondary mb-1">water_drop</span>
-                <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Precip</span>
-                <span className="font-data-mono text-data-mono text-on-surface text-lg">{weather.precipitation} mm</span>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex gap-6 border-b border-google-border mb-2 text-sm font-medium text-google-secondary">
+              {['Temperature', 'Precipitation', 'Wind'].map(tab => (
+                <button 
+                  key={tab}
+                  className={`pb-3 px-1 border-b-2 ${activeTab === tab ? 'border-google-blue text-google-blue' : 'border-transparent hover:text-google-text'}`}
+                  onClick={() => setActiveTab(tab)}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            {/* Chart Area */}
+            {activeTab === 'Temperature' && renderChart()}
+            {activeTab !== 'Temperature' && (
+              <div className="h-32 flex items-center justify-center text-google-secondary text-sm border-b border-google-border">
+                {activeTab} data chart goes here
               </div>
-            </section>
-          </>
+            )}
+
+            {/* Daily Forecast Row */}
+            <div className="flex overflow-x-auto no-scrollbar gap-2 py-4">
+              {weather.daily.time.slice(0, 8).map((time, idx) => (
+                <div key={idx} className="flex flex-col items-center min-w-[72px] p-2 hover:bg-gray-50 rounded-lg cursor-pointer">
+                  <span className="text-[13px] font-medium text-google-text mb-2">
+                    {formatDay(time)}
+                  </span>
+                  
+                  {/* Rain chance if > 0 */}
+                  <div className="h-4 flex items-center text-[#1a73e8] text-xs font-medium mb-1">
+                    {weather.daily.precipitation_probability_max[idx] > 10 && (
+                      <div className="flex items-center">
+                        <span className="material-symbols-outlined text-[14px]">water_drop</span>
+                        {weather.daily.precipitation_probability_max[idx]}%
+                      </div>
+                    )}
+                  </div>
+
+                  <span 
+                    className="material-symbols-outlined text-google-secondary text-2xl mb-3"
+                    style={{ fontVariationSettings: "'FILL' 1" }}
+                  >
+                    {getWeatherIcon(weather.daily.weather_code[idx])}
+                  </span>
+                  
+                  <div className="flex gap-2 text-sm">
+                    <span className="font-medium text-google-text">{Math.round(weather.daily.temperature_2m_max[idx])}°</span>
+                    <span className="text-google-secondary">{Math.round(weather.daily.temperature_2m_min[idx])}°</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+          </div>
         )}
       </main>
     </div>
