@@ -1,32 +1,54 @@
-# React + TypeScript + Vite
+# ☁️ Atmosphere: Premium Weather App
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+![Atmosphere UI](https://img.shields.io/badge/UI-Glassmorphism-blue?style=flat-square)
+![React](https://img.shields.io/badge/React-19-blue?style=flat-square&logo=react)
+![TailwindCSS](https://img.shields.io/badge/Tailwind-CSS-38B2AC?style=flat-square&logo=tailwind-css)
+![TypeScript](https://img.shields.io/badge/TypeScript-Ready-3178C6?style=flat-square&logo=typescript)
 
-Currently, two official plugins are available:
+Atmosphere is a visually stunning, high-fidelity weather dashboard built with React. It features a modern **Glassmorphism** design system, delivering weather forecasts with atmospheric depth and clarity.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## ✨ Features
 
-## React Compiler
+- **Premium UI:** Deep multi-layered backgrounds with frosted glass effects and high-quality blurs.
+- **Global Search:** Finds weather for virtually any location worldwide—from major metropolises to the smallest villages—using the highly accurate OpenStreetMap (Nominatim) database.
+- **Real-Time Data:** Accurate, up-to-the-minute weather metrics powered by Open-Meteo.
+- **Responsive Design:** Fluid grid layout that looks perfect on both mobile and desktop.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🛠️ Tech Stack
 
-## Expanding the Oxlint configuration
+- **Framework:** React + Vite
+- **Language:** TypeScript
+- **Styling:** Tailwind CSS (v3) + Custom CSS Variables
+- **Icons:** Google Material Symbols
+- **APIs:** Open-Meteo (Weather Data) & Nominatim (Geocoding)
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+## 🚀 Getting Started
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
+### Prerequisites
+Make sure you have [Node.js](https://nodejs.org/) installed on your machine.
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+### Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/ramagithubri/weather-app.git
+   ```
+2. Navigate into the directory:
+   ```bash
+   cd weather-app
+   ```
+3. Install the dependencies:
+   ```bash
+   npm install
+   ```
+4. Start the development server:
+   ```bash
+   npm run dev
+   ```
+5. Open your browser and visit `http://localhost:5173`.
+
+## 🎨 Design Philosophy
+The design centers around a premium, immersive weather experience. By utilizing dark "Midnight Blue" tones combined with glowing glass cards, the UI maintains a sense of lightness while maintaining an aesthetic that feels sophisticated and precise.
+
+---
+*Generated and developed as part of a Frontend React Task.*
